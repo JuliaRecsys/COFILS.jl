@@ -3,14 +3,19 @@ type Cofils <: Persa.CFModel
   userfeatures::Array{Float64,2}
   itemfeatures::Array{Float64,2}
   features::Int
+  usersmean::Array{Float64}
+  preferences::Persa.RatingPreferences
 end
 
 function Cofils(dataset::Persa.CFDatasetAbstract, features::Int)
-  (result, -) = svds(Persa.getMatrix(dataset), nsv = features)
+  matrix = Persa.getMatrix(dataset)
+  (result, -) = svds(matrix, nsv = features)
   U = result.U
   V = result.Vt
 
-  return Cofils(DecisionTree.Ensemble([]), U, V, features)
+  usersmean = zeros(dataset.users)
+
+  return Cofils(DecisionTree.Ensemble([]), U, V, features, Persa.shrunkUserMean(dataset, 10), dataset.preferences)
 end
 
 function Persa.train!(model::Cofils, dataset::Persa.CFDatasetAbstract; nfeaturestrees::Int = 10, trees::Int = 20)
@@ -27,7 +32,7 @@ function Persa.train!(model::Cofils, dataset::Persa.CFDatasetAbstract; nfeatures
 
     training_set[i,1:model.features] = model.userfeatures[u,:]
     training_set[i,(model.features+1):end] = model.itemfeatures[v,:]
-    labels[i] = r
+    labels[i] = r - model.usersmean[u]
   end
 
   model.slmodel = build_forest(labels, training_set, nfeaturestrees, trees)
@@ -36,7 +41,7 @@ function Persa.train!(model::Cofils, dataset::Persa.CFDatasetAbstract; nfeatures
 end
 
 function Persa.predict(model::Cofils, user::Int64, item::Int64)
-  return apply_forest(model.slmodel, vcat(model.userfeatures[1,:], model.itemfeatures[1,:])')[1]
+  return Persa.correct(apply_forest(model.slmodel, vcat(model.userfeatures[user,:], model.itemfeatures[item,:])')[1] + model.usersmean[user], model.preferences)
 end
 
 Persa.canPredict(model::Cofils, user::Int, item::Int) = true
