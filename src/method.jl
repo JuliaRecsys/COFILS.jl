@@ -1,4 +1,4 @@
-type Cofils <: Persa.CFModel
+struct Cofils <: Persa.CFModel
   slmodel::DecisionTree.Ensemble
   userfeatures::Array{Float64,2}
   itemfeatures::Array{Float64,2}
