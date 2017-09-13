@@ -5,6 +5,7 @@ module COFILS
 using Persa
 using DecisionTree
 
+include("latentvariable.jl")
 include("method.jl")
 
 end # module

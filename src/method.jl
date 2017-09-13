@@ -1,47 +1,66 @@
-struct Cofils <: Persa.CFModel
-  slmodel::DecisionTree.Ensemble
-  userfeatures::Array{Float64,2}
-  itemfeatures::Array{Float64,2}
-  features::Int
-  usersmean::Array{Float64}
-  preferences::Persa.RatingPreferences
+mutable struct Cofils <: Persa.CFModel
+    slmodel::Nullable{DecisionTree.Ensemble}
+    vl::VariableLatent
+    features::Int
+    usersmean::Array{Float64}
+    preferences::Persa.RatingPreferences
 end
 
-function Cofils(dataset::Persa.CFDatasetAbstract, features::Int)
-  matrix = Persa.getMatrix(dataset)
-  (result, -) = svds(matrix, nsv = features)
-  U = result.U
-  V = result.Vt
+uservl(model::Cofils, id::Int) = user(model.vl, id)
+itemvl(model::Cofils, id::Int) = item(model.vl, id)
 
-  usersmean = zeros(dataset.users)
-
-  return Cofils(DecisionTree.Ensemble([]), U, V, features, Persa.shrunkUserMean(dataset, 10), dataset.preferences)
+function Cofils(dataset::Persa.CFDatasetAbstract, features::Int, extractvl::Function = svd)
+    usersmean = zeros(dataset.users)
+    return Cofils(Nullable{DecisionTree.Ensemble}(), extractvl(dataset, features), features, Persa.shrunkUserMean(dataset, 10), dataset.preferences)
 end
 
 function Persa.train!(model::Cofils, dataset::Persa.CFDatasetAbstract; nfeaturestrees::Int = 10, trees::Int = 20)
-  if (model.features .* 2) < nfeaturestrees
-    warn("RandomFlorest: # features trees is greeter than the features quantity.");
-    nfeaturestrees = model.features;
-  end
+    if length(model.vl) < nfeaturestrees
+        warn("RandomFlorest: # features trees is greeter than the features quantity.");
+        nfeaturestrees = length(model.vl);
+    end
 
-  training_set = Array{Float64,2}(length(dataset), 2 .* model.features)
-  labels = Array{Float64,1}(length(dataset))
+    (attributes, labels) = convert2sl(model, dataset)
 
-  for i=1:length(dataset)
-    (u, v, r) = dataset[i]
+    model.slmodel = Nullable{DecisionTree.Ensemble}(build_forest(labels, attributes, nfeaturestrees, trees))
 
-    training_set[i,1:model.features] = model.userfeatures[u,:]
-    training_set[i,(model.features+1):end] = model.itemfeatures[v,:]
-    labels[i] = r - model.usersmean[u]
-  end
+    return nothing
+end
 
-  model.slmodel = build_forest(labels, training_set, nfeaturestrees, trees)
+function convert2sl(model::Cofils, dataset::Persa.CFDatasetAbstract)
+    m, n = size(model.vl)
 
-  return nothing
+    attributes = Array{Float64,2}(length(dataset), m + n)
+    labels = Array{Float64,1}(length(dataset))
+
+    for i=1:length(dataset)
+      (u, v, r) = dataset[i]
+
+      attributes[i,1:m] = uservl(model, u)
+      attributes[i,(m+1):(m+n)] = itemvl(model, v)
+      labels[i] = r - model.usersmean[u]
+    end
+
+    return attributes, labels
+end
+
+function convert2sl(model::Cofils, user::Int, item::Int)
+    m, n = size(model.vl)
+
+    attributes = Array{Float64,2}(1, m + n)
+
+    attributes[1,1:m] = uservl(model, user)
+    attributes[1,(m+1):(m+n)] = itemvl(model, item)
+
+    return attributes
 end
 
 function Persa.predict(model::Cofils, user::Int64, item::Int64)
-  return Persa.correct(apply_forest(model.slmodel, vcat(model.userfeatures[user,:], model.itemfeatures[item,:])')[1] + model.usersmean[user], model.preferences)
+    attributes = convert2sl(model, user, item)
+
+    p = apply_forest(get(model.slmodel), attributes)[1] + model.usersmean[user]
+
+    return Persa.correct(p, model.preferences)
 end
 
-Persa.canPredict(model::Cofils, user::Int, item::Int) = true
+Persa.canpredict(model::Cofils, user::Int, item::Int) = true
