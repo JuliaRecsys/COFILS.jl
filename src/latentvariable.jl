@@ -1,22 +1,22 @@
-struct VariableLatent
+struct LatentVariable
     user::Array{Float64,2}
     item::Array{Float64,2}
 end
 
-function svd(dataset::Persa.CFDatasetAbstract, features::Int)::VariableLatent
+function svd(dataset::Persa.CFDatasetAbstract, features::Int)::LatentVariable
     matrix = Persa.getmatrix(dataset)
     (result, -) = svds(matrix, nsv = features)
     U = result.U
     V = result.Vt
-    return VariableLatent(U, V')
+    return LatentVariable(U, V')
 end
 
-Base.length(vl::VariableLatent) = maximum(size(vl))
+Base.length(lv::LatentVariable) = maximum(size(lv))
 
-user(vl::VariableLatent) = vl.user
-item(vl::VariableLatent) = vl.item
+user(lv::LatentVariable) = lv.user
+item(lv::LatentVariable) = lv.item
 
-user(vl::VariableLatent, id::Int) = user(vl)[id,:]
-item(vl::VariableLatent, id::Int) = item(vl)[id,:]
+user(lv::LatentVariable, id::Int) = user(lv)[id,:]
+item(lv::LatentVariable, id::Int) = item(lv)[id,:]
 
-Base.size(vl::VariableLatent) = (size(vl.user)[2], size(vl.item)[2])
+Base.size(lv::LatentVariable) = (size(lv.user)[2], size(lv.item)[2])
